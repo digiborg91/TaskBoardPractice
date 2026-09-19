@@ -1,0 +1,518 @@
+openapi: 3.0.3
+info:
+  title: TaskBoard API
+  version: 1.0.0
+  description: |
+    REST API for TaskBoard — a kanban task management app.
+    All endpoints require a Bearer token (Supabase auth session access_token)
+    in the Authorization header. The health check endpoint is public.
+
+    ## Contract Testing Reference
+    Use this spec to validate that API responses match the agreed contract.
+    Tools like `playwright` with schema validation, or Dredd/Schemathesis,
+    can consume this file directly.
+
+servers:
+  - url: https://lhpqgcdtcxotskoqyweh.supabase.co/functions/v1/api
+    description: Production API
+  - url: http://localhost:5173/api
+    description: Local development (proxied via Netlify redirect)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Board:
+      type: object
+      required:
+        - id
+        - title
+        - user_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique board identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          description: Board name
+          example: "Sprint 42"
+        description:
+          type: string
+          nullable: true
+          description: Optional board description
+          example: "Q4 sprint planning board"
+        user_id:
+          type: string
+          format: uuid
+          description: Owner user ID
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last modification timestamp
+
+    BoardList:
+      type: object
+      required:
+        - boards
+      properties:
+        boards:
+          type: array
+          items:
+            $ref: "#/components/schemas/Board"
+
+    Task:
+      type: object
+      required:
+        - id
+        - title
+        - status
+        - priority
+        - position
+        - board_id
+        - user_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique task identifier
+        title:
+          type: string
+          description: Task name
+          example: "Fix login bug"
+        description:
+          type: string
+          nullable: true
+          description: Optional task details
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+          description: Current column/status of the task
+          example: "todo"
+        priority:
+          type: string
+          enum: [low, medium, high]
+          description: Task priority level
+          example: "medium"
+        position:
+          type: integer
+          description: Sort order within a column
+          example: 0
+        board_id:
+          type: string
+          format: uuid
+          description: Parent board ID
+        user_id:
+          type: string
+          format: uuid
+          description: Owner user ID
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskList:
+      type: object
+      required:
+        - tasks
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Board not found"
+
+    DeleteResponse:
+      type: object
+      required:
+        - deleted
+        - id
+      properties:
+        deleted:
+          type: boolean
+          example: true
+        id:
+          type: string
+          format: uuid
+          description: ID of the deleted resource
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+        - version
+        - endpoints
+      properties:
+        status:
+          type: string
+          example: "ok"
+        service:
+          type: string
+          example: "taskboard-api"
+        version:
+          type: string
+          example: "1.0.0"
+        endpoints:
+          type: array
+          items:
+            type: string
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Returns API status and list of available endpoints. No auth required.
+      security: []
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/boards:
+    get:
+      summary: List all boards
+      description: Returns all boards owned by the authenticated user.
+      responses:
+        "200":
+          description: List of boards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardList"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a new board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  example: "Sprint 42"
+                description:
+                  type: string
+                  nullable: true
+                  example: "Q4 sprint planning"
+      responses:
+        "201":
+          description: Board created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/boards/{boardId}:
+    get:
+      summary: Get a single board
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Board details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "404":
+          description: Board not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Update a board
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Updated board
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "404":
+          description: Board not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete a board
+      description: Deleting a board also deletes all its tasks (cascade).
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Board deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
+  /api/boards/{boardId}/tasks:
+    get:
+      summary: List tasks for a board
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskList"
+    post:
+      summary: Create a task on a board
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                  nullable: true
+                status:
+                  type: string
+                  enum: [todo, in_progress, done]
+                  default: todo
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/tasks/{taskId}:
+    get:
+      summary: Get a single task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Update a task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                  nullable: true
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete a task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
+  /api/tasks/{taskId}/status:
+    patch:
+      summary: Update task status
+      description: Move a task between columns (todo, in_progress, done).
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [todo, in_progress, done]
+      responses:
+        "200":
+          description: Updated task with new status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Invalid status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
